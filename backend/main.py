@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -22,12 +24,14 @@ app = FastAPI(
 # CORS Configuration
 # ==========================================
 
+origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,7 +56,6 @@ class URLRequest(BaseModel):
 
 @app.get("/")
 def home():
-
     return {
         "message": "JobShield AI API is running",
         "status": "success"
@@ -74,7 +77,7 @@ def analyze(request: JobRequest):
         "company_verification"
     ].get("company_name")
 
-    # Save analysis to PostgreSQL
+    # Save analysis to PostgreSQL / Neon
     save_analysis(
         job_text=request.job_text,
         risk_score=result["risk_score"],
@@ -97,29 +100,24 @@ def analyze(request: JobRequest):
 def analyze_url(request: URLRequest):
 
     # Scrape the webpage
-    scraped = scrape_job_url(
-        request.url
-    )
+    scraped = scrape_job_url(request.url)
 
     # Handle scraping failure
     if not scraped["success"]:
-
         return {
             "success": False,
             "error": scraped["error"]
         }
 
     # Analyze scraped job text
-    analysis = analyze_job(
-        scraped["text"]
-    )
+    analysis = analyze_job(scraped["text"])
 
     # Get company name
     company_name = analysis[
         "company_verification"
     ].get("company_name")
 
-    # Save analysis to PostgreSQL
+    # Save analysis to PostgreSQL / Neon
     save_analysis(
         job_text=scraped["text"],
         risk_score=analysis["risk_score"],
@@ -148,7 +146,6 @@ def history():
     results = []
 
     for row in rows:
-
         results.append({
             "id": row[0],
             "job_text": row[1],

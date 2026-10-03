@@ -1,4 +1,9 @@
+import os
 import psycopg2
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
 
 
 # ==========================================
@@ -7,15 +12,19 @@ import psycopg2
 
 def get_connection():
 
-    connection = psycopg2.connect(
-        host="localhost",
-        port="5432",
-        database="jobshield_db",
-        user="postgres",
-        password="Ramya@1816"
-    )
+    database_url = os.getenv("DATABASE_URL")
 
-    return connection
+    if database_url:
+        return psycopg2.connect(database_url)
+
+    # Fallback for local PostgreSQL
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST", "localhost"),
+        port=os.getenv("DB_PORT", "5432"),
+        database=os.getenv("DB_NAME", "jobshield_db"),
+        user=os.getenv("DB_USER", "postgres"),
+        password=os.getenv("DB_PASSWORD")
+    )
 
 
 # ==========================================
@@ -31,7 +40,6 @@ def save_analysis(
 ):
 
     connection = get_connection()
-
     cursor = connection.cursor()
 
     query = """
@@ -69,7 +77,6 @@ def save_analysis(
 def get_analysis_history():
 
     connection = get_connection()
-
     cursor = connection.cursor()
 
     cursor.execute("""

@@ -1,15 +1,12 @@
 import re
 import requests
 from urllib.parse import urlparse
-
 from nlp_analyzer import analyze_with_nlp
 from company_verifier import verify_company
-
 
 # ==========================================
 # Rule-Based Scam Indicators
 # ==========================================
-
 RED_FLAGS = {
     "registration fee": 25,
     "registration fees": 25,
@@ -27,11 +24,57 @@ RED_FLAGS = {
     "work from home": 3,
 }
 
+# ==========================================
+# Negation-Aware Matching (payment keywords)
+# ==========================================
+NEGATABLE_FLAGS = {
+    "registration fee",
+    "registration fees",
+    "training fee",
+    "training fees",
+    "pay to apply",
+    "payment required",
+}
+
+# "no registration fee", "without any fee", "don't pay to apply"
+NEG_BEFORE = re.compile(
+    r"\b(?:no|not|without|zero|never|nor|free of|don't|dont|do not)\b"
+    r"(?:\s+\w+){0,2}\s*$"
+)
+
+# "registration fee is not required", "fee isn't charged", "fee is free"
+NEG_AFTER = re.compile(
+    r"^\s*(?:(?:is|are|will be|be|was)\s+)?"
+    r"(?:not|never|no|isn't|aren't)\s+(?:be\s+)?"
+    r"(?:required|needed|necessary|charged|applicable|collected|applied)"
+    r"|^\s*(?:is|are)\s+(?:free|waived)\b"
+)
+
+
+def is_negated(text_lower, start, end):
+    # Look a few words before the match (same clause only)
+    before = text_lower[max(0, start - 40):start]
+    before = re.split(r"[.,;:!?\n]", before)[-1]
+
+    # Look a few words after the match (same clause only)
+    after = text_lower[end:end + 40]
+    after = re.split(r"[.,;:!?\n]", after)[0]
+
+    return bool(NEG_BEFORE.search(before) or NEG_AFTER.match(after))
+
+
+def has_non_negated(text_lower, keyword):
+    """True if the keyword appears at least once WITHOUT being negated."""
+    pattern = r"\b" + re.escape(keyword) + r"\b"
+    for match in re.finditer(pattern, text_lower):
+        if not is_negated(text_lower, match.start(), match.end()):
+            return True
+    return False
+
 
 # ==========================================
 # Free Email Providers
 # ==========================================
-
 FREE_EMAIL_DOMAINS = {
     "gmail.com",
     "yahoo.com",
@@ -40,11 +83,9 @@ FREE_EMAIL_DOMAINS = {
     "protonmail.com",
 }
 
-
 # ==========================================
 # Job / Internship Detection Keywords
 # ==========================================
-
 JOB_KEYWORDS = [
     "job",
     "jobs",
@@ -86,11 +127,9 @@ JOB_KEYWORDS = [
     "part time",
 ]
 
-
 # ==========================================
 # Non-Job Webpage Keywords
 # ==========================================
-
 NON_JOB_KEYWORDS = [
     "press release",
     "news",
@@ -107,33 +146,27 @@ NON_JOB_KEYWORDS = [
     "company announcement",
 ]
 
-
 # ==========================================
 # Extract Email Addresses
 # ==========================================
-
 def extract_emails(text):
     return re.findall(
         r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
         text
     )
 
-
 # ==========================================
 # Extract URLs
 # ==========================================
-
 def extract_urls(text):
     return re.findall(
         r"https?://[^\s]+",
         text
     )
 
-
 # ==========================================
 # Analyze Email Addresses
 # ==========================================
-
 def analyze_emails(emails):
     email_analysis = []
 
@@ -157,11 +190,9 @@ def analyze_emails(emails):
 
     return email_analysis
 
-
 # ==========================================
 # Analyze URLs
 # ==========================================
-
 def analyze_urls(urls):
     url_analysis = []
 
@@ -175,17 +206,14 @@ def analyze_urls(urls):
                 "url": clean_url,
                 "domain": domain
             })
-
         except Exception:
             pass
 
     return url_analysis
 
-
 # ==========================================
 # Verify Website
 # ==========================================
-
 def verify_website(url):
     try:
         response = requests.get(
@@ -214,15 +242,12 @@ def verify_website(url):
             "error": "Website could not be reached."
         }
 
-
 # ==========================================
 # Check Whether NLP Signal Already Exists
 # ==========================================
-
 def nlp_signal_already_detected(category, text_lower):
 
     if category == "payment_request":
-
         payment_keywords = [
             "registration fee",
             "registration fees",
@@ -241,13 +266,11 @@ def nlp_signal_already_detected(category, text_lower):
         ]
 
         return any(
-            keyword in text_lower
+            has_non_negated(text_lower, keyword)
             for keyword in payment_keywords
         )
 
-
     if category == "urgency":
-
         urgency_keywords = [
             "urgent",
             "immediately",
@@ -264,9 +287,7 @@ def nlp_signal_already_detected(category, text_lower):
             for keyword in urgency_keywords
         )
 
-
     if category == "guaranteed_job":
-
         guaranteed_rule_keywords = [
             "guaranteed job",
             "guaranteed placement"
@@ -277,9 +298,7 @@ def nlp_signal_already_detected(category, text_lower):
             for keyword in guaranteed_rule_keywords
         )
 
-
     if category == "off_platform_contact":
-
         contact_keywords = [
             "whatsapp",
             "telegram"
@@ -290,16 +309,12 @@ def nlp_signal_already_detected(category, text_lower):
             for keyword in contact_keywords
         )
 
-
     return False
-
 
 # ==========================================
 # Detect Whether Text Looks Like a Job
 # ==========================================
-
 def detect_job_posting(text):
-
     text_lower = text.lower()
 
     job_matches = []
@@ -333,7 +348,6 @@ def detect_job_posting(text):
     ]
 
     if len(strong_matches) >= 1:
-
         return {
             "is_job_posting": True,
             "confidence": "HIGH",
@@ -346,7 +360,6 @@ def detect_job_posting(text):
         }
 
     if len(job_matches) >= 3 and len(non_job_matches) == 0:
-
         return {
             "is_job_posting": True,
             "confidence": "MEDIUM",
@@ -359,7 +372,6 @@ def detect_job_posting(text):
         }
 
     if len(non_job_matches) >= 1 and len(job_matches) < 3:
-
         return {
             "is_job_posting": False,
             "confidence": "HIGH",
@@ -385,23 +397,18 @@ def detect_job_posting(text):
         )
     }
 
-
 # ==========================================
 # Verification Intelligence
 # ==========================================
-
 def analyze_verification_signals(text):
-
     text_lower = text.lower()
 
     verification_flags = []
     verification_points = 0
 
-
     # --------------------------------------
     # 1. Shortened URL
     # --------------------------------------
-
     shortened_domains = [
         "lnkd.in",
         "bit.ly",
@@ -415,7 +422,6 @@ def analyze_verification_signals(text):
     urls = extract_urls(text)
 
     for url in urls:
-
         try:
             domain = urlparse(
                 url.rstrip(".,)")
@@ -425,9 +431,7 @@ def analyze_verification_signals(text):
                 domain = domain[4:]
 
             if domain in shortened_domains:
-
                 verification_points += 5
-
                 verification_flags.append({
                     "flag": "Shortened application URL detected",
                     "points": 5,
@@ -436,17 +440,13 @@ def analyze_verification_signals(text):
                         "Verify the destination before applying."
                     )
                 })
-
                 break
-
         except Exception:
             pass
-
 
     # --------------------------------------
     # 2. Social Media Engagement
     # --------------------------------------
-
     engagement_patterns = [
         "comment interested",
         'comment "interested"',
@@ -459,11 +459,8 @@ def analyze_verification_signals(text):
     ]
 
     for pattern in engagement_patterns:
-
         if pattern in text_lower:
-
             verification_points += 5
-
             verification_flags.append({
                 "flag": (
                     "Application depends on social-media comments"
@@ -475,14 +472,11 @@ def analyze_verification_signals(text):
                     "an official application page."
                 )
             })
-
             break
-
 
     # --------------------------------------
     # 3. Third-party Disclaimer
     # --------------------------------------
-
     disclaimer_patterns = [
         "not associated with",
         "not affiliated with",
@@ -495,15 +489,12 @@ def analyze_verification_signals(text):
     disclaimer_found = False
 
     for pattern in disclaimer_patterns:
-
         if pattern in text_lower:
             disclaimer_found = True
             break
 
     if disclaimer_found:
-
         verification_points += 10
-
         verification_flags.append({
             "flag": "Third-party affiliation disclaimer detected",
             "points": 10,
@@ -513,15 +504,12 @@ def analyze_verification_signals(text):
             )
         })
 
-
     # --------------------------------------
     # 4. Company + Non-official Application URL
     # --------------------------------------
-
     company_verification = verify_company(text)
 
     if company_verification["company_name"] and urls:
-
         official_company_url_found = False
 
         company_name = (
@@ -531,7 +519,6 @@ def analyze_verification_signals(text):
         )
 
         for url in urls:
-
             try:
                 domain = urlparse(
                     url.rstrip(".,)")
@@ -553,14 +540,11 @@ def analyze_verification_signals(text):
                 ):
                     official_company_url_found = True
                     break
-
             except Exception:
                 pass
 
         if not official_company_url_found:
-
             verification_points += 5
-
             verification_flags.append({
                 "flag": (
                     "Application link is not clearly an official company domain"
@@ -572,18 +556,15 @@ def analyze_verification_signals(text):
                 )
             })
 
-
     # --------------------------------------
     # 5. No Recruiter Email
     # --------------------------------------
-
     emails = extract_emails(text)
 
     if (
         company_verification["company_name"]
         and len(emails) == 0
     ):
-
         verification_flags.append({
             "flag": "No recruiter or company email found",
             "points": 0,
@@ -593,57 +574,48 @@ def analyze_verification_signals(text):
             )
         })
 
-
     return {
         "verification_points": verification_points,
         "verification_flags": verification_flags
     }
 
-
 # ==========================================
 # Main Job Analysis
 # ==========================================
-
 def analyze_job(text: str):
-
     text_lower = text.lower()
 
     risk_score = 0
     detected_flags = []
 
-
     # ======================================
     # 1. Job Posting Detection
     # ======================================
-
     job_detection = detect_job_posting(text)
-
 
     # ======================================
     # 2. Rule-Based Detection
     # ======================================
-
     for keyword, points in RED_FLAGS.items():
+        if keyword in NEGATABLE_FLAGS:
+            found = has_non_negated(text_lower, keyword)
+        else:
+            found = keyword in text_lower
 
-        if keyword in text_lower:
-
+        if found:
             risk_score += points
-
             detected_flags.append({
                 "flag": keyword,
                 "points": points,
                 "source": "Rule-Based"
             })
 
-
     # ======================================
     # 3. NLP Analysis
     # ======================================
-
     nlp_result = analyze_with_nlp(text)
 
     for pattern in nlp_result["suspicious_patterns"]:
-
         category = pattern["category"]
 
         if nlp_signal_already_detected(
@@ -653,28 +625,21 @@ def analyze_job(text: str):
             continue
 
         risk_score += pattern["points"]
-
         detected_flags.append({
             "flag": pattern["message"],
             "points": pattern["points"],
             "source": "NLP"
         })
 
-
     # ======================================
     # 4. Email Analysis
     # ======================================
-
     emails = extract_emails(text)
-
     email_analysis = analyze_emails(emails)
 
     for email_info in email_analysis:
-
         if email_info["status"] == "SUSPICIOUS":
-
             risk_score += 10
-
             detected_flags.append({
                 "flag": (
                     f"Free email domain: "
@@ -684,27 +649,21 @@ def analyze_job(text: str):
                 "source": "Email Analysis"
             })
 
-
     # ======================================
     # 5. Company Verification
     # ======================================
-
     company_verification = verify_company(
         text,
         emails
     )
 
-
     # ======================================
     # 6. URL Analysis
     # ======================================
-
     urls = extract_urls(text)
-
     url_analysis = []
 
     for url in urls:
-
         clean_url = url.rstrip(".,)")
 
         website_result = verify_website(
@@ -716,20 +675,16 @@ def analyze_job(text: str):
         )
 
         if not website_result["reachable"]:
-
             risk_score += 10
-
             detected_flags.append({
                 "flag": "Website could not be verified",
                 "points": 10,
                 "source": "Website Verification"
             })
 
-
     # ======================================
     # 7. Verification Intelligence
     # ======================================
-
     verification_analysis = analyze_verification_signals(
         text
     )
@@ -741,32 +696,25 @@ def analyze_job(text: str):
     risk_score += verification_points
 
     for flag in verification_analysis["verification_flags"]:
-
         detected_flags.append({
             "flag": flag["flag"],
             "points": flag["points"],
             "source": "Verification Intelligence"
         })
 
-
     # ======================================
     # 8. Limit Risk Score
     # ======================================
-
     risk_score = min(
         risk_score,
         100
     )
 
-
     # ======================================
     # 9. Risk Classification
     # ======================================
-
     if risk_score >= 61:
-
         risk_level = "HIGH RISK"
-
         recommendation = (
             "Do not pay money or share "
             "sensitive information."
@@ -776,32 +724,24 @@ def analyze_job(text: str):
         risk_score >= 31
         or verification_points >= 15
     ):
-
         risk_level = "NEEDS VERIFICATION"
-
         recommendation = (
             "Verify the company, application link, "
             "and recruiter before proceeding."
         )
 
     else:
-
         risk_level = "LIKELY GENUINE"
-
         recommendation = (
             "No major scam indicators detected, "
             "but verify independently."
         )
 
-
     # ======================================
     # 10. Non-job Page Handling
     # ======================================
-
     if not job_detection["is_job_posting"]:
-
         risk_level = "NOT A JOB POSTING"
-
         recommendation = (
             "This URL does not appear to contain "
             "a job or internship opportunity. "
@@ -809,11 +749,9 @@ def analyze_job(text: str):
             "actual job posting."
         )
 
-
     # ======================================
     # 11. Final Result
     # ======================================
-
     return {
         "risk_score": risk_score,
         "risk_level": risk_level,
