@@ -1,9 +1,9 @@
 import { useState } from "react";
 import "./App.css";
 
-// Backend base URL (set VITE_API_URL when deploying; defaults to local Docker)
-const API_BASE =
-  import.meta.env.VITE_API_URL || "http://127.0.0.1:8001";
+// Backend base URL (set VITE_API_BASE_URL when deploying; defaults to local Docker)
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
 
 function App() {
   const [jobText, setJobText] = useState("");
@@ -29,7 +29,7 @@ function App() {
     setResult(null);
 
     try {
-      const response = await fetch(`${API_BASE}/analyze`, {
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -70,7 +70,7 @@ function App() {
     setResult(null);
 
     try {
-      const response = await fetch(`${API_BASE}/analyze-url`, {
+      const response = await fetch(`${API_BASE_URL}/analyze-url`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -111,7 +111,7 @@ function App() {
     setHistoryLoading(true);
 
     try {
-      const response = await fetch(`${API_BASE}/history`);
+      const response = await fetch(`${API_BASE_URL}/history`);
 
       if (!response.ok) {
         throw new Error("Could not load history");
